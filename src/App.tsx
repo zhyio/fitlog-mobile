@@ -64,33 +64,35 @@ export default function App() {
 
 function Today({ draft, setDraft, templates, save, share }: { draft: Workout; setDraft: (w: Workout) => void; templates: Exercise[]; save: () => void; share: () => void }) {
   const [adding, setAdding] = useState(false)
-  const [filter, setFilter] = useState<Part | '全部'>('全部')
+  const [mode, setMode] = useState<'overview' | 'split'>('overview')
+  const [activePart, setActivePart] = useState<Part>('胸')
   const [exercise, setExercise] = useState({ name: '', sets: 4, reps: 8, weight: 20, part: '胸' as Part, cue: '', bonusSets: 0 })
   const uniqueTemplates = [...new Map(templates.map(e => [e.name, e])).values()].slice(0, 6)
-  const shown = filter === '全部' ? draft.exercises : draft.exercises.filter(e => e.part === filter)
+  const shown = mode === 'overview' ? draft.exercises : draft.exercises.filter(e => e.part === activePart)
   const add = () => { if (!exercise.name.trim()) return; setDraft({ ...draft, exercises: [...draft.exercises, { ...exercise, completedSets: 0, id: uid() }] }); setExercise({ name: '', sets: 4, reps: 8, weight: 20, part: '胸', cue: '', bonusSets: 0 }); setAdding(false) }
   const useTemplate = (e: Exercise) => setExercise({ name: e.name, sets: e.sets, reps: e.reps, weight: e.weight, part: e.part || '胸', cue: e.cue || '', bonusSets: e.bonusSets || 0 })
   const toggleSet = (id: string, amount: number) => setDraft({...draft, exercises: draft.exercises.map(e => e.id === id ? {...e, completedSets: Math.max(0, Math.min(e.sets + (e.bonusSets || 0), (e.completedSets || 0) + amount))} : e)})
   const target = draft.exercises.reduce((s,e) => s + e.sets, 0), done = draft.exercises.reduce((s,e) => s + Math.min(e.sets, e.completedSets || 0), 0)
   return <section className="page today-page">
-    <div className="date-kicker">{formatDate(draft.date, true)}</div>
-    <div className="hero-row"><div><h1>今天，<br/><em>练点什么？</em></h1><p>每一次记录，都是下一次突破的证据。</p></div><div className="day-orbit"><span>{new Date().getDate()}</span><small>{new Intl.DateTimeFormat('en',{month:'short'}).format(new Date()).toUpperCase()}</small></div></div>
+    <div className="training-head"><div><div className="date-kicker">{formatDate(draft.date, true)}</div><h1>{mode === 'overview' ? '今日训练' : activePart}</h1><p>{shown.length ? `${shown.length} 个动作 · ${done}/${target} 目标组完成` : mode === 'overview' ? '还没有训练动作' : `暂无${activePart}部训练`}</p></div><div className="day-orbit"><span>{new Date().getDate()}</span><small>{new Intl.DateTimeFormat('en',{month:'short'}).format(new Date()).toUpperCase()}</small></div></div>
     <div className="metrics-strip">
       <label><Clock3/><span><b>{draft.duration}</b> 分钟</span><input aria-label="训练时长" type="range" min="10" max="180" step="5" value={draft.duration} onChange={e => setDraft({...draft, duration: +e.target.value})}/></label>
       <div><Dumbbell/><span><b>{draft.exercises.length}</b> 个动作</span></div>
       <div><Sparkles/><span><b>{draft.feeling}/5</b> 状态</span></div>
     </div>
     {!!target && <div className="workout-progress"><div><span>今日完成度</span><b>{done} / {target} 组</b></div><i><span style={{width:`${done/target*100}%`}}/></i></div>}
-    <div className="section-heading"><div><span>01</span><h2>训练动作</h2></div><button className="text-btn" onClick={() => setAdding(true)}><Plus/> 添加</button></div>
-    <div className="part-filter"><button className={filter === '全部' ? 'active' : ''} onClick={()=>setFilter('全部')}>全部</button>{PARTS.map(p=><button key={p} className={filter === p ? 'active' : ''} onClick={()=>setFilter(p)}>{p}</button>)}</div>
+    <div className="view-switch"><button className={mode==='overview'?'active':''} onClick={()=>setMode('overview')}><BarChart3/> 总览</button><button className={mode==='split'?'active':''} onClick={()=>setMode('split')}><Dumbbell/> 分化</button></div>
+    <div className="section-heading"><div><span>01</span><h2>{mode === 'overview' ? '全部动作' : `${activePart}部训练`}</h2></div><button className="text-btn" onClick={() => setAdding(true)}><Plus/> 添加</button></div>
+    {mode === 'split' && <aside className="part-rail" aria-label="部位快捷切换">{PARTS.map(p=><button key={p} className={activePart===p?'active':''} onClick={()=>setActivePart(p)}>{p}</button>)}</aside>}
     <div className="exercise-list">
-      {draft.exercises.length === 0 && <button className="empty-card" onClick={() => setAdding(true)}><span><Plus/></span><b>添加第一个动作</b><small>力量、有氧、拉伸，都算数</small></button>}
+      {shown.length === 0 && <button className="empty-card" onClick={() => setAdding(true)}><span><Plus/></span><b>{mode === 'overview' ? '添加第一个动作' : `添加${activePart}部动作`}</b><small>点击 + 开始今天的训练</small></button>}
       {shown.map((e, i) => <div className="exercise-card rich" key={e.id}><span className="index">{String(i + 1).padStart(2, '0')}</span><div className="exercise-main"><div className="exercise-title"><b>{e.name}</b><i>{e.part || '其他'}</i></div><small>{e.sets} 目标组 × {e.reps} 次 {e.weight > 0 && `× ${e.weight} kg`}{!!e.bonusSets && ` · +${e.bonusSets} 额外组`}</small>{e.cue && <p>{e.cue}</p>}<div className="set-counter"><button onClick={()=>toggleSet(e.id,-1)}>−</button><span><b>{e.completedSets || 0}</b> / {e.sets + (e.bonusSets || 0)} 组完成</span><button onClick={()=>toggleSet(e.id,1)}>+</button></div></div><button aria-label="删除" onClick={() => setDraft({...draft, exercises: draft.exercises.filter(x => x.id !== e.id)})}><Trash2/></button></div>)}
     </div>
     <div className="section-heading"><div><span>02</span><h2>训练感受</h2></div></div>
     <div className="feeling-row">{[1,2,3,4,5].map(n => <button key={n} className={draft.feeling === n ? 'active' : ''} onClick={() => setDraft({...draft, feeling: n})}>{['累趴','偏累','一般','不错','超棒'][n-1]}</button>)}</div>
     <textarea placeholder="今天有什么值得记住？" value={draft.note} onChange={e => setDraft({...draft, note: e.target.value})}/>
     <div className="action-row"><button className="share-btn" onClick={share}><Share2/></button><button className="save-btn" onClick={save}>完成训练 <ChevronRight/></button></div>
+    <button className="floating-add" aria-label="快速添加动作" onClick={()=>setAdding(true)}><Plus/></button>
     {adding && <div className="modal-backdrop" onClick={() => setAdding(false)}><div className="add-sheet" onClick={e => e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><small>NEW EXERCISE</small><h2>添加动作</h2></div><button onClick={() => setAdding(false)}><X/></button></div>{!!uniqueTemplates.length&&<div className="templates"><small>最近使用</small><div>{uniqueTemplates.map(e=><button key={e.name} onClick={()=>useTemplate(e)}><RotateCcw/> {e.name}</button>)}</div></div>}<label>训练部位<div className="part-picker">{PARTS.map(p=><button type="button" key={p} className={exercise.part===p?'active':''} onClick={()=>setExercise({...exercise,part:p})}>{p}</button>)}</div></label><label>动作名称<input autoFocus placeholder="例如：杠铃深蹲" value={exercise.name} onChange={e => setExercise({...exercise, name: e.target.value})}/></label><div className="number-grid">{([['目标组','sets'],['次数','reps'],['重量 kg','weight'],['额外组','bonusSets']] as const).map(([label,key]) => <label key={key}>{label}<input type="number" min="0" value={exercise[key]} onChange={e => setExercise({...exercise, [key]: +e.target.value})}/></label>)}</div><label className="cue-field">动作要领<input placeholder="例如：收紧核心，膝盖对准脚尖" value={exercise.cue} onChange={e=>setExercise({...exercise,cue:e.target.value})}/></label><button className="save-btn full" onClick={add}>加入训练 <Plus/></button></div></div>}
   </section>
 }

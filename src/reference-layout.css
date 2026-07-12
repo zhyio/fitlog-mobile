@@ -1,0 +1,10 @@
+.training-head{display:flex;align-items:flex-start;justify-content:space-between;padding:14px 0 18px;border-bottom:1px solid var(--line)}
+.training-head h1{font-size:46px;line-height:1;margin:8px 0}.training-head p{margin:0;color:var(--muted);font:500 10px 'DM Mono'}
+.training-head .day-orbit{position:relative;margin-top:14px}.today-page .metrics-strip{margin:14px 0 28px}.today-page .workout-progress{margin:-16px 0 14px;border-top:0}
+.view-switch{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 25px}.view-switch button{height:42px;border:1px solid var(--line);background:#191a17;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:7px;font-size:11px}
+.view-switch button.active{background:var(--acid);border-color:var(--acid);color:var(--ink);font-weight:800}.view-switch svg{width:15px}
+.part-rail{position:fixed;z-index:8;right:max(8px,calc((100vw - 680px)/2 + 8px));top:205px;display:flex;flex-direction:column;gap:7px}
+.part-rail button{width:34px;height:34px;border-radius:50%;border:1px solid #4a4d45;background:#22241f;color:#8e9189;font-size:10px;box-shadow:0 4px 12px #0005}
+.part-rail button.active{background:var(--acid);border-color:var(--acid);color:var(--ink);font-weight:900;box-shadow:0 0 0 4px #d9ff4320}
+.floating-add{position:fixed;z-index:9;right:max(17px,calc((100vw - 680px)/2 + 17px));bottom:92px;width:52px;height:52px;border-radius:50%;border:0;background:var(--acid);color:var(--ink);display:grid;place-items:center;box-shadow:0 8px 25px #0009}
+.floating-add svg{width:24px}.today-page .action-row{padding-right:58px}
