@@ -1,0 +1,15 @@
+.workout-progress{margin:-22px 0 28px;padding:12px 14px;background:#191a17;border:1px solid var(--line)}
+.workout-progress>div{display:flex;justify-content:space-between;font-size:10px;margin-bottom:8px}.workout-progress b{font:500 10px 'DM Mono';color:var(--acid)}
+.workout-progress>i{display:block;height:4px;background:#30322e}.workout-progress>i span{display:block;height:100%;background:var(--acid);transition:width .3s}
+.part-filter{display:flex;gap:6px;overflow:auto;margin:-3px 0 12px;padding-bottom:3px;scrollbar-width:none}
+.part-filter button,.part-picker button{flex:0 0 auto;border:1px solid var(--line);background:#191a17;color:var(--muted);padding:7px 11px;font-size:10px}
+.part-filter button.active,.part-picker button.active{background:var(--acid);border-color:var(--acid);color:var(--ink);font-weight:700}
+.exercise-card.rich{align-items:flex-start;padding-block:14px}.exercise-title{display:flex;align-items:center;gap:7px}.exercise-title i{font-style:normal;font-size:8px;color:var(--ink);background:var(--acid);padding:2px 5px}
+.exercise-main p{font-size:10px;color:#b4b7ad;margin:7px 0 0;line-height:1.5}
+.set-counter{display:grid;grid-template-columns:28px 1fr 28px;align-items:center;margin-top:10px;max-width:230px}.set-counter button{height:28px;background:#2d302a;border:1px solid #41443d;color:var(--acid)}
+.set-counter span{text-align:center;font-size:9px;color:var(--muted)}.set-counter span b{font:500 13px 'DM Mono';color:var(--paper)}
+.templates{margin-bottom:16px}.templates>small{display:block;font:500 9px 'DM Mono';color:#777;margin-bottom:7px}.templates>div{display:flex;gap:6px;overflow:auto}
+.templates button{flex:0 0 auto;border:1px solid #c6c8bf;background:#e4e5de;color:#373832;padding:7px 9px;font-size:10px;display:flex;align-items:center;gap:4px}.templates svg{width:11px}
+.part-picker{display:flex;gap:5px;overflow:auto;margin-bottom:14px}.part-picker button{background:#dedfd7;border-color:#c6c8bf;color:#686a64}
+.number-grid:has(label:nth-child(4)){grid-template-columns:repeat(4,1fr)}.cue-field{margin-top:14px}
+.backup-btn{width:100%;height:52px;margin-top:28px;border:1px solid var(--line);background:#191a17;color:var(--paper);display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px}.backup-btn svg{width:16px;color:var(--acid)}.backup-btn small{font:500 8px 'DM Mono';color:var(--muted);border:1px solid #494c45;padding:2px 4px}
