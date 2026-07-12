@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { BarChart3, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Download, Dumbbell, Flame, History, Link2, Plus, RotateCcw, Share2, Sparkles, Trash2, Trophy, X } from 'lucide-react'
+import { BarChart3, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Copy, Download, Dumbbell, ExternalLink, Flame, History, Link2, Plus, RotateCcw, Share2, Sparkles, Trash2, Trophy, X } from 'lucide-react'
 
 type Part = '胸' | '肩' | '背' | '腿' | '核心' | '有氧'
 type Exercise = { id: string; name: string; sets: number; reps: number; weight: number; part?: Part; cue?: string; bonusSets?: number; completedSets?: number }
@@ -29,6 +29,7 @@ export default function App() {
   const [workouts, setWorkouts] = useState<Workout[]>(load)
   const [tab, setTab] = useState<Tab>('today')
   const [selected, setSelected] = useState<Workout | null>(null)
+  const [shareWorkout, setShareWorkout] = useState<Workout | null>(null)
   const [toast, setToast] = useState('')
   const current = workouts.find(w => w.date === today()) || { date: today(), duration: 45, feeling: 4, note: '', exercises: [] }
   const [draft, setDraft] = useState<Workout>(current)
@@ -39,13 +40,7 @@ export default function App() {
     setWorkouts(next); localStorage.setItem(STORE_KEY, JSON.stringify(next)); flash('今天的训练已保存')
   }
   const flash = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2200) }
-  const share = async (workout: Workout) => {
-    const url = `${location.origin}${location.pathname}#share=${encodeWorkout(workout)}`
-    try {
-      if (navigator.share) await navigator.share({ title: `${formatDate(workout.date)}训练记录`, text: `我完成了 ${workout.exercises.length} 个训练动作`, url })
-      else { await navigator.clipboard.writeText(url); flash('分享链接已复制') }
-    } catch { /* user cancelled */ }
-  }
+  const share = (workout: Workout) => { if (!workout.exercises.length) return flash('先添加训练动作再分享'); setShareWorkout(workout) }
 
   if (shared) return <SharedWorkout workout={shared} />
 
@@ -62,6 +57,7 @@ export default function App() {
       <button className={tab === 'stats' ? 'active' : ''} onClick={() => setTab('stats')}><BarChart3/><span>统计</span></button>
     </nav>
     {selected && <WorkoutSheet workout={selected} close={() => setSelected(null)} share={() => share(selected)} />}
+    {shareWorkout && <ShareDialog workout={shareWorkout} close={() => setShareWorkout(null)} flash={flash} />}
     {toast && <div className="toast"><Check size={16}/>{toast}</div>}
   </div>
 }
@@ -117,5 +113,12 @@ function Stats({ workouts }: { workouts: Workout[] }) {
 }
 
 function WorkoutSheet({ workout, close, share }: { workout: Workout; close: () => void; share: () => void }) { return <div className="modal-backdrop" onClick={close}><div className="detail-sheet" onClick={e=>e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><small>WORKOUT DETAIL</small><h2>{formatDate(workout.date)}</h2></div><button onClick={close}><X/></button></div><div className="detail-metrics"><span><Clock3/> {workout.duration} 分钟</span><span><Dumbbell/> {workout.exercises.length} 个动作</span></div>{workout.exercises.map(e=><div className="detail-exercise" key={e.id}><b>{e.name}</b><span>{e.sets} × {e.reps}{e.weight ? ` × ${e.weight} kg`:''}</span></div>)}{workout.note&&<blockquote>“{workout.note}”</blockquote>}<button className="save-btn full" onClick={share}>分享这次训练 <Share2/></button></div></div> }
+
+function ShareDialog({ workout, close, flash }: { workout: Workout; close: () => void; flash: (message: string) => void }) {
+  const url = `${location.origin}${location.pathname}#share=${encodeWorkout(workout)}`
+  const copy = async () => { try { await navigator.clipboard.writeText(url); flash('分享链接已复制') } catch { const input=document.createElement('textarea'); input.value=url; document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); flash('分享链接已复制') } }
+  const systemShare = async () => { if (!navigator.share) return copy(); try { await navigator.share({title:`${formatDate(workout.date)}训练记录`,text:`我的训练记录：${workout.exercises.length} 个动作`,url}) } catch { /* cancelled */ } }
+  return <div className="modal-backdrop share-backdrop" onClick={close}><div className="share-sheet" onClick={e=>e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><small>SHARE WORKOUT</small><h2>分享训练链接</h2></div><button onClick={close}><X/></button></div><p className="share-help">任何人打开这个链接，都可以查看你在 {formatDate(workout.date)} 的训练内容。</p><div className="share-url"><Link2/><span>{url}</span></div><button className="save-btn full" onClick={copy}><Copy/> 复制可访问链接</button><div className="share-secondary"><button onClick={systemShare}><Share2/> 系统分享</button><a href={url} target="_blank" rel="noreferrer"><ExternalLink/> 打开预览</a></div><small className="privacy-note">链接中包含本次训练的只读快照，不会公开其他历史记录。</small></div></div>
+}
 
 function SharedWorkout({ workout }: { workout: Workout }) { return <div className="shared-page"><div className="shared-glow"/><header className="brand"><span className="brand-mark">练</span><div><b>练迹</b><small>SHARED WORKOUT</small></div></header><main><div className="share-label"><Link2/> 一份公开的训练记录</div><h1>{formatDate(workout.date)}<br/><em>完成训练。</em></h1><div className="shared-score"><div><b>{workout.duration}</b><span>分钟</span></div><div><b>{workout.exercises.length}</b><span>动作</span></div><div><b>{workout.feeling}/5</b><span>状态</span></div></div><div className="shared-list">{workout.exercises.map((e,i)=><div key={e.id}><span>{String(i+1).padStart(2,'0')}</span><b>{e.name}</b><small>{e.sets} 组 × {e.reps} 次 {e.weight > 0 && `× ${e.weight} kg`}</small></div>)}</div>{workout.note&&<blockquote>“{workout.note}”</blockquote>}<a className="save-btn full" href={location.pathname}>我也要记录 <Dumbbell/></a></main><footer>记录由 练迹 FITLOG 生成</footer></div> }
