@@ -1,18 +1,22 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BarChart3, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Copy, Download, Dumbbell, ExternalLink, Flame, History, Link2, Plus, RotateCcw, Share2, Sparkles, Trash2, Trophy, X } from 'lucide-react'
 
 type Part = '胸' | '肩' | '背' | '腿' | '核心' | '有氧'
-type Exercise = { id: string; name: string; sets: number; reps: number; weight: number; part?: Part; cue?: string; bonusSets?: number; completedSets?: number }
-type Workout = { date: string; duration: number; feeling: number; note: string; exercises: Exercise[] }
+type Exercise = { id: string; name: string; sets: number; reps: number; weight: number; part?: Part; cue?: string; bonusSets?: number; completedSets?: number; planPart?: Part }
+type Workout = { date: string; duration: number; feeling: number; note: string; exercises: Exercise[]; selectedParts?: Part[] }
+type PartPlans = Record<Part, Exercise[]>
 type Tab = 'today' | 'history' | 'stats'
 
 const STORE_KEY = 'fitlog.workouts.v1'
+const PLAN_KEY = 'fitlog.part-plans.v1'
 const PARTS: Part[] = ['胸', '肩', '背', '腿', '核心', '有氧']
+const EMPTY_PLANS = (): PartPlans => ({ 胸: [], 肩: [], 背: [], 腿: [], 核心: [], 有氧: [] })
 const today = () => new Date().toLocaleDateString('en-CA')
 const uid = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)
 const formatDate = (value: string, withYear = false) => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short', ...(withYear ? { year: 'numeric' } : {}) }).format(new Date(`${value}T12:00:00`))
 const volumeOf = (w: Workout) => w.exercises.reduce((sum, e) => sum + e.sets * e.reps * e.weight, 0)
 const load = (): Workout[] => { try { return JSON.parse(localStorage.getItem(STORE_KEY) || '[]') } catch { return [] } }
+const loadPlans = (): PartPlans => { try { return {...EMPTY_PLANS(), ...JSON.parse(localStorage.getItem(PLAN_KEY) || '{}')} } catch { return EMPTY_PLANS() } }
 const streakOf = (workouts: Workout[]) => { const days = new Set(workouts.map(w => w.date)); let streak = 0; const d = new Date(); if (!days.has(today())) d.setDate(d.getDate() - 1); while (days.has(d.toLocaleDateString('en-CA'))) { streak++; d.setDate(d.getDate() - 1) } return streak }
 
 function encodeWorkout(workout: Workout) {
@@ -27,12 +31,14 @@ function decodeWorkout(value: string): Workout | null {
 export default function App() {
   const shared = useMemo(() => decodeWorkout(new URLSearchParams(location.hash.slice(1)).get('share') || ''), [])
   const [workouts, setWorkouts] = useState<Workout[]>(load)
+  const [plans, setPlansState] = useState<PartPlans>(loadPlans)
   const [tab, setTab] = useState<Tab>('today')
   const [selected, setSelected] = useState<Workout | null>(null)
   const [shareWorkout, setShareWorkout] = useState<Workout | null>(null)
   const [toast, setToast] = useState('')
-  const current = workouts.find(w => w.date === today()) || { date: today(), duration: 45, feeling: 4, note: '', exercises: [] }
+  const current = workouts.find(w => w.date === today()) || { date: today(), duration: 45, feeling: 4, note: '', exercises: [], selectedParts: [] }
   const [draft, setDraft] = useState<Workout>(current)
+  const setPlans = (next: PartPlans) => { setPlansState(next); localStorage.setItem(PLAN_KEY, JSON.stringify(next)) }
 
   const save = () => {
     if (!draft.exercises.length) return flash('先添加一个训练动作')
@@ -45,9 +51,9 @@ export default function App() {
   if (shared) return <SharedWorkout workout={shared} />
 
   return <div className="app-shell">
-    <header className="topbar"><div className="brand"><span className="brand-mark">练</span><div><b>练迹</b><small>FITLOG</small></div></div><div className="streak"><Flame size={15} fill="currentColor"/> 连续 {streakOf(workouts)} 天</div></header>
+    <header className="topbar"><div className="brand"><span className="brand-mark">练</span><div><b>练迹</b><small>FITLOG // CYBER TRAINING</small></div></div><CyberClock/><div className="streak"><Flame size={15} fill="currentColor"/> {streakOf(workouts)}D</div></header>
     <main>
-      {tab === 'today' && <Today draft={draft} setDraft={setDraft} templates={workouts.flatMap(w => w.exercises)} save={save} share={() => share(draft)} />}
+      {tab === 'today' && <Today draft={draft} setDraft={setDraft} plans={plans} setPlans={setPlans} templates={workouts.flatMap(w => w.exercises)} save={save} share={() => share(draft)} />}
       {tab === 'history' && <HistoryView workouts={workouts} open={setSelected} />}
       {tab === 'stats' && <Stats workouts={workouts} />}
     </main>
@@ -62,38 +68,64 @@ export default function App() {
   </div>
 }
 
-function Today({ draft, setDraft, templates, save, share }: { draft: Workout; setDraft: (w: Workout) => void; templates: Exercise[]; save: () => void; share: () => void }) {
+function CyberClock() {
+  const [now, setNow] = useState(new Date())
+  useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 1000); return () => window.clearInterval(timer) }, [])
+  const time = now.toLocaleTimeString('zh-CN', {hour12:false})
+  return <div className={`cyber-clock ${now.getSeconds() % 10 === 0 ? 'surge' : ''}`}><span>SYS.TIME</span><b>{time}</b><i key={time}/></div>
+}
+
+function Today({ draft, setDraft, plans, setPlans, templates, save, share }: { draft: Workout; setDraft: (w: Workout) => void; plans: PartPlans; setPlans: (p: PartPlans) => void; templates: Exercise[]; save: () => void; share: () => void }) {
   const [adding, setAdding] = useState(false)
   const [mode, setMode] = useState<'overview' | 'split'>('overview')
   const [activePart, setActivePart] = useState<Part>('胸')
-  const [exercise, setExercise] = useState({ name: '', sets: 4, reps: 8, weight: 20, part: '胸' as Part, cue: '', bonusSets: 0 })
-  const uniqueTemplates = [...new Map(templates.map(e => [e.name, e])).values()].slice(0, 6)
-  const shown = mode === 'overview' ? draft.exercises : draft.exercises.filter(e => e.part === activePart)
-  const add = () => { if (!exercise.name.trim()) return; setDraft({ ...draft, exercises: [...draft.exercises, { ...exercise, completedSets: 0, id: uid() }] }); setExercise({ name: '', sets: 4, reps: 8, weight: 20, part: '胸', cue: '', bonusSets: 0 }); setAdding(false) }
-  const useTemplate = (e: Exercise) => setExercise({ name: e.name, sets: e.sets, reps: e.reps, weight: e.weight, part: e.part || '胸', cue: e.cue || '', bonusSets: e.bonusSets || 0 })
+  const blank = (part: Part) => ({ name: '', sets: 4, reps: 8, weight: 20, part, cue: '', bonusSets: 0 })
+  const [exercise, setExercise] = useState(blank('胸'))
+  const selectedParts = draft.selectedParts || []
+  const uniqueTemplates = [...new Map([...templates, ...Object.values(plans).flat()].map(e => [e.name, e])).values()].slice(0, 8)
+  const target = draft.exercises.reduce((s,e) => s + e.sets, 0)
+  const done = draft.exercises.reduce((s,e) => s + Math.min(e.sets, e.completedSets || 0), 0)
+
+  const openAdd = () => { setExercise(blank(mode === 'split' ? activePart : '胸')); setAdding(true) }
+  const add = () => {
+    if (!exercise.name.trim()) return
+    const item = {...exercise, part: mode === 'split' ? activePart : exercise.part, completedSets: 0, id: uid()}
+    if (mode === 'split') setPlans({...plans, [activePart]: [...plans[activePart], item]})
+    else setDraft({...draft, exercises: [...draft.exercises, item]})
+    setAdding(false)
+  }
+  const useTemplate = (e: Exercise) => setExercise({ name: e.name, sets: e.sets, reps: e.reps, weight: e.weight, part: mode === 'split' ? activePart : e.part || '胸', cue: e.cue || '', bonusSets: e.bonusSets || 0 })
+  const togglePart = (part: Part) => {
+    const removing = selectedParts.includes(part)
+    const nextParts = removing ? selectedParts.filter(p => p !== part) : [...selectedParts, part]
+    const retained = draft.exercises.filter(e => e.planPart !== part)
+    const injected = removing ? [] : plans[part].map(e => ({...e, id:uid(), part, planPart:part, completedSets:0}))
+    setDraft({...draft, selectedParts: nextParts, exercises: [...retained, ...injected]})
+  }
   const toggleSet = (id: string, amount: number) => setDraft({...draft, exercises: draft.exercises.map(e => e.id === id ? {...e, completedSets: Math.max(0, Math.min(e.sets + (e.bonusSets || 0), (e.completedSets || 0) + amount))} : e)})
-  const target = draft.exercises.reduce((s,e) => s + e.sets, 0), done = draft.exercises.reduce((s,e) => s + Math.min(e.sets, e.completedSets || 0), 0)
-  return <section className="page today-page">
-    <div className="training-head"><div><div className="date-kicker">{formatDate(draft.date, true)}</div><h1>{mode === 'overview' ? '今日训练' : activePart}</h1><p>{shown.length ? `${shown.length} 个动作 · ${done}/${target} 目标组完成` : mode === 'overview' ? '还没有训练动作' : `暂无${activePart}部训练`}</p></div><div className="day-orbit"><span>{new Date().getDate()}</span><small>{new Intl.DateTimeFormat('en',{month:'short'}).format(new Date()).toUpperCase()}</small></div></div>
-    <div className="metrics-strip">
-      <label><Clock3/><span><b>{draft.duration}</b> 分钟</span><input aria-label="训练时长" type="range" min="10" max="180" step="5" value={draft.duration} onChange={e => setDraft({...draft, duration: +e.target.value})}/></label>
-      <div><Dumbbell/><span><b>{draft.exercises.length}</b> 个动作</span></div>
-      <div><Sparkles/><span><b>{draft.feeling}/5</b> 状态</span></div>
-    </div>
-    {!!target && <div className="workout-progress"><div><span>今日完成度</span><b>{done} / {target} 组</b></div><i><span style={{width:`${done/target*100}%`}}/></i></div>}
-    <div className="view-switch"><button className={mode==='overview'?'active':''} onClick={()=>setMode('overview')}><BarChart3/> 总览</button><button className={mode==='split'?'active':''} onClick={()=>setMode('split')}><Dumbbell/> 分化</button></div>
-    <div className="section-heading"><div><span>01</span><h2>{mode === 'overview' ? '全部动作' : `${activePart}部训练`}</h2></div><button className="text-btn" onClick={() => setAdding(true)}><Plus/> 添加</button></div>
-    {mode === 'split' && <aside className="part-rail" aria-label="部位快捷切换">{PARTS.map(p=><button key={p} className={activePart===p?'active':''} onClick={()=>setActivePart(p)}>{p}</button>)}</aside>}
-    <div className="exercise-list">
-      {shown.length === 0 && <button className="empty-card" onClick={() => setAdding(true)}><span><Plus/></span><b>{mode === 'overview' ? '添加第一个动作' : `添加${activePart}部动作`}</b><small>点击 + 开始今天的训练</small></button>}
-      {shown.map((e, i) => <div className="exercise-card rich" key={e.id}><span className="index">{String(i + 1).padStart(2, '0')}</span><div className="exercise-main"><div className="exercise-title"><b>{e.name}</b><i>{e.part || '其他'}</i></div><small>{e.sets} 目标组 × {e.reps} 次 {e.weight > 0 && `× ${e.weight} kg`}{!!e.bonusSets && ` · +${e.bonusSets} 额外组`}</small>{e.cue && <p>{e.cue}</p>}<div className="set-counter"><button onClick={()=>toggleSet(e.id,-1)}>−</button><span><b>{e.completedSets || 0}</b> / {e.sets + (e.bonusSets || 0)} 组完成</span><button onClick={()=>toggleSet(e.id,1)}>+</button></div></div><button aria-label="删除" onClick={() => setDraft({...draft, exercises: draft.exercises.filter(x => x.id !== e.id)})}><Trash2/></button></div>)}
-    </div>
-    <div className="section-heading"><div><span>02</span><h2>训练感受</h2></div></div>
-    <div className="feeling-row">{[1,2,3,4,5].map(n => <button key={n} className={draft.feeling === n ? 'active' : ''} onClick={() => setDraft({...draft, feeling: n})}>{['累趴','偏累','一般','不错','超棒'][n-1]}</button>)}</div>
-    <textarea placeholder="今天有什么值得记住？" value={draft.note} onChange={e => setDraft({...draft, note: e.target.value})}/>
-    <div className="action-row"><button className="share-btn" onClick={share}><Share2/></button><button className="save-btn" onClick={save}>完成训练 <ChevronRight/></button></div>
-    <button className="floating-add" aria-label="快速添加动作" onClick={()=>setAdding(true)}><Plus/></button>
-    {adding && <div className="modal-backdrop" onClick={() => setAdding(false)}><div className="add-sheet" onClick={e => e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><small>NEW EXERCISE</small><h2>添加动作</h2></div><button onClick={() => setAdding(false)}><X/></button></div>{!!uniqueTemplates.length&&<div className="templates"><small>最近使用</small><div>{uniqueTemplates.map(e=><button key={e.name} onClick={()=>useTemplate(e)}><RotateCcw/> {e.name}</button>)}</div></div>}<label>训练部位<div className="part-picker">{PARTS.map(p=><button type="button" key={p} className={exercise.part===p?'active':''} onClick={()=>setExercise({...exercise,part:p})}>{p}</button>)}</div></label><label>动作名称<input autoFocus placeholder="例如：杠铃深蹲" value={exercise.name} onChange={e => setExercise({...exercise, name: e.target.value})}/></label><div className="number-grid">{([['目标组','sets'],['次数','reps'],['重量 kg','weight'],['额外组','bonusSets']] as const).map(([label,key]) => <label key={key}>{label}<input type="number" min="0" value={exercise[key]} onChange={e => setExercise({...exercise, [key]: +e.target.value})}/></label>)}</div><label className="cue-field">动作要领<input placeholder="例如：收紧核心，膝盖对准脚尖" value={exercise.cue} onChange={e=>setExercise({...exercise,cue:e.target.value})}/></label><button className="save-btn full" onClick={add}>加入训练 <Plus/></button></div></div>}
+  const remove = (id: string) => mode === 'split' ? setPlans({...plans, [activePart]: plans[activePart].filter(e=>e.id!==id)}) : setDraft({...draft, exercises:draft.exercises.filter(e=>e.id!==id)})
+  const groups = PARTS.map(part => ({part, items:draft.exercises.filter(e => (e.part || '核心') === part)})).filter(g=>g.items.length || selectedParts.includes(g.part))
+  const card = (e: Exercise, i: number, template = false) => <div className="exercise-card rich cyber-card" key={e.id}><span className="index">{String(i+1).padStart(2,'0')}</span><div className="exercise-main"><div className="exercise-title"><b>{e.name}</b><i>{template?'PLAN':e.part}</i></div><small>{e.sets} 目标组 × {e.reps} 次 {e.weight>0&&`× ${e.weight} kg`}{!!e.bonusSets&&` · +${e.bonusSets} 额外组`}</small>{e.cue&&<p>{e.cue}</p>}{!template&&<div className="set-counter"><button onClick={()=>toggleSet(e.id,-1)}>−</button><span><b>{e.completedSets||0}</b> / {e.sets+(e.bonusSets||0)} 组完成</span><button onClick={()=>toggleSet(e.id,1)}>+</button></div>}</div><button aria-label="删除" onClick={()=>remove(e.id)}><Trash2/></button></div>
+
+  return <section className="page today-page cyber-page">
+    <div className="scan-beam" aria-hidden="true"/>
+    <div className="training-head"><div><div className="date-kicker">NODE // {formatDate(draft.date,true)}</div><h1>{mode==='overview'?'今日协议':`${activePart}部档案`}</h1><p>{mode==='overview'?`${draft.exercises.length} EXERCISES · ${done}/${target} SETS`:`${plans[activePart].length} TEMPLATE EXERCISES`}</p></div><div className="day-orbit"><span>{new Date().getDate()}</span><small>DAY</small></div></div>
+    <div className="view-switch"><button className={mode==='overview'?'active':''} onClick={()=>setMode('overview')}><BarChart3/> 总览作战台</button><button className={mode==='split'?'active':''} onClick={()=>setMode('split')}><Dumbbell/> 分化数据库</button></div>
+    {mode === 'overview' ? <>
+      <div className="protocol-picker"><div><span>01 / TARGET NODES</span><h2>今天训练的部位</h2><p>可选择一个或多个分化部位</p></div><div className="protocol-grid">{PARTS.map((p,i)=><button key={p} data-part={p} className={selectedParts.includes(p)?'active':''} onClick={()=>togglePart(p)}><span>0{i+1}</span><b>{p}</b><small>{plans[p].length} 动作</small><i/></button>)}</div></div>
+      <div className="metrics-strip"><label><Clock3/><span><b>{draft.duration}</b> 分钟</span><input aria-label="训练时长" type="range" min="10" max="180" step="5" value={draft.duration} onChange={e=>setDraft({...draft,duration:+e.target.value})}/></label><div><Dumbbell/><span><b>{draft.exercises.length}</b> 个动作</span></div><div><Sparkles/><span><b>{draft.feeling}/5</b> 状态</span></div></div>
+      {!!target&&<div className="workout-progress"><div><span>MISSION PROGRESS</span><b>{done} / {target} SETS</b></div><i><span style={{width:`${done/target*100}%`}}/></i></div>}
+      <div className="section-heading"><div><span>02</span><h2>今日训练序列</h2></div><button className="text-btn" onClick={openAdd}><Plus/> 自定义</button></div>
+      {!groups.length&&<button className="empty-card cyber-empty" onClick={()=>setMode('split')}><span><Dumbbell/></span><b>先建立分化动作库</b><small>进入分化数据库，为各部位配置动作</small></button>}
+      <div className="part-groups">{groups.map(group=><section className="part-group" data-part={group.part} key={group.part}><header><span>{group.part}</span><b>{group.items.length} EXERCISES</b><i/></header><div className="exercise-list">{group.items.length?group.items.map((e,i)=>card(e,i)):<div className="empty-protocol">该部位尚未配置动作</div>}</div></section>)}</div>
+      <div className="section-heading"><div><span>03</span><h2>训练反馈</h2></div></div><div className="feeling-row">{[1,2,3,4,5].map(n=><button key={n} className={draft.feeling===n?'active':''} onClick={()=>setDraft({...draft,feeling:n})}>{['过载','疲劳','稳定','良好','峰值'][n-1]}</button>)}</div><textarea placeholder="记录今日训练数据与身体反馈…" value={draft.note} onChange={e=>setDraft({...draft,note:e.target.value})}/><div className="action-row"><button className="share-btn" onClick={share}><Share2/></button><button className="save-btn" onClick={save}>提交训练日志 <ChevronRight/></button></div>
+    </> : <>
+      <aside className="part-rail" aria-label="部位快捷切换">{PARTS.map(p=><button key={p} className={activePart===p?'active':''} onClick={()=>setActivePart(p)}>{p}</button>)}</aside>
+      <div className="split-console"><span>01 / SPLIT DATABASE</span><h2>{activePart}部动作模板</h2><p>这里的动作不会直接计入今日训练。回到总览选择“{activePart}”，即可整组载入。</p><div className="split-stats"><b>{plans[activePart].length}</b><small>已配置动作</small></div></div>
+      <div className="section-heading"><div><span>02</span><h2>动作清单</h2></div><button className="text-btn" onClick={openAdd}><Plus/> 添加模板</button></div><div className="exercise-list">{plans[activePart].length?plans[activePart].map((e,i)=>card(e,i,true)):<button className="empty-card cyber-empty" onClick={openAdd}><span><Plus/></span><b>添加{activePart}部动作</b><small>建立可重复调用的分化模板</small></button>}</div>
+    </>}
+    <button className="floating-add" aria-label="快速添加动作" onClick={openAdd}><Plus/></button>
+    {adding&&<div className="modal-backdrop" onClick={()=>setAdding(false)}><div className="add-sheet cyber-sheet" onClick={e=>e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><small>{mode==='split'?'ADD TO SPLIT DATABASE':'ADD CUSTOM EXERCISE'}</small><h2>添加{mode==='split'?activePart:''}动作</h2></div><button onClick={()=>setAdding(false)}><X/></button></div>{!!uniqueTemplates.length&&<div className="templates"><small>RECENT TEMPLATES</small><div>{uniqueTemplates.map(e=><button key={e.name} onClick={()=>useTemplate(e)}><RotateCcw/> {e.name}</button>)}</div></div>}{mode==='overview'&&<label>训练部位<div className="part-picker">{PARTS.map(p=><button type="button" key={p} className={exercise.part===p?'active':''} onClick={()=>setExercise({...exercise,part:p})}>{p}</button>)}</div></label>}<label>动作名称<input autoFocus placeholder="例如：杠铃深蹲" value={exercise.name} onChange={e=>setExercise({...exercise,name:e.target.value})}/></label><div className="number-grid">{([['目标组','sets'],['次数','reps'],['重量 kg','weight'],['额外组','bonusSets']] as const).map(([label,key])=><label key={key}>{label}<input type="number" min="0" value={exercise[key]} onChange={e=>setExercise({...exercise,[key]:+e.target.value})}/></label>)}</div><label className="cue-field">动作要领<input placeholder="例如：收紧核心，控制离心" value={exercise.cue} onChange={e=>setExercise({...exercise,cue:e.target.value})}/></label><button className="save-btn full" onClick={add}>{mode==='split'?'写入分化数据库':'加入今日训练'} <Plus/></button></div></div>}
   </section>
 }
 
