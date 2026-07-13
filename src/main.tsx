@@ -6,6 +6,7 @@ import './enhancements.css'
 import './reference-layout.css'
 import './soft-editorial.css'
 import './forest-theme.css'
+import './glass-theme.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode><App /></React.StrictMode>,
