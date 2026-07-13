@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BarChart3, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Copy, Download, Dumbbell, ExternalLink, Flame, History, Link2, Pencil, Plus, RotateCcw, Share2, Sparkles, Trash2, Trophy, X } from 'lucide-react'
+import { Activity, ArrowUp, BarChart3, CalendarDays, Check, ChevronLeft, ChevronRight, CircleDot, Clock3, Copy, Download, Dumbbell, ExternalLink, Flame, Footprints, HeartPulse, History, Link2, Menu, Pencil, Plus, RotateCcw, Share2, Sparkles, Trash2, Trophy, X } from 'lucide-react'
+import { loadCloudSnapshot, saveCloudSnapshot } from './db'
 
 type Part = '胸' | '肩' | '背' | '腿' | '核心' | '有氧'
 type Exercise = { id: string; name: string; sets: number; reps: number; weight: number; part?: Part; cue?: string; bonusSets?: number; completedSets?: number; planPart?: Part }
@@ -10,6 +11,7 @@ type Tab = 'today' | 'history' | 'stats'
 const STORE_KEY = 'fitlog.workouts.v1'
 const PLAN_KEY = 'fitlog.part-plans.v1'
 const PARTS: Part[] = ['胸', '肩', '背', '腿', '核心', '有氧']
+const PART_ICONS = { 胸: HeartPulse, 肩: ArrowUp, 背: Menu, 腿: Footprints, 核心: CircleDot, 有氧: Activity }
 const EMPTY_PLANS = (): PartPlans => ({ 胸: [], 肩: [], 背: [], 腿: [], 核心: [], 有氧: [] })
 const today = () => new Date().toLocaleDateString('en-CA')
 const uid = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)
@@ -36,14 +38,32 @@ export default function App() {
   const [selected, setSelected] = useState<Workout | null>(null)
   const [shareWorkout, setShareWorkout] = useState<Workout | null>(null)
   const [toast, setToast] = useState('')
+  const [syncing, setSyncing] = useState(true)
   const current = workouts.find(w => w.date === today()) || { date: today(), duration: 45, feeling: 4, note: '', exercises: [], selectedParts: [] }
   const [draft, setDraft] = useState<Workout>(current)
-  const setPlans = (next: PartPlans) => { setPlansState(next); localStorage.setItem(PLAN_KEY, JSON.stringify(next)) }
+  useEffect(() => {
+    loadCloudSnapshot().then(snapshot => {
+      if (!snapshot) return
+      setWorkouts(snapshot.workouts)
+      setPlansState({...EMPTY_PLANS(), ...snapshot.plans})
+      localStorage.setItem(STORE_KEY, JSON.stringify(snapshot.workouts))
+      localStorage.setItem(PLAN_KEY, JSON.stringify(snapshot.plans))
+      const cloudToday = snapshot.workouts.find(w => w.date === today())
+      if (cloudToday) setDraft(cloudToday)
+    }).finally(() => setSyncing(false))
+  }, [])
+
+  const sync = (nextWorkouts: Workout[], nextPlans: PartPlans) => {
+    saveCloudSnapshot({workouts: nextWorkouts, plans: nextPlans}).then(ok => {
+      if (!ok) flash('已保存在本机，云同步暂不可用')
+    })
+  }
+  const setPlans = (next: PartPlans) => { setPlansState(next); localStorage.setItem(PLAN_KEY, JSON.stringify(next)); sync(workouts, next) }
 
   const save = () => {
     if (!draft.exercises.length) return flash('先添加一个训练动作')
     const next = [...workouts.filter(w => w.date !== draft.date), draft].sort((a,b) => b.date.localeCompare(a.date))
-    setWorkouts(next); localStorage.setItem(STORE_KEY, JSON.stringify(next)); flash('今天的训练已保存')
+    setWorkouts(next); localStorage.setItem(STORE_KEY, JSON.stringify(next)); sync(next, plans); flash('今天的训练已保存')
   }
   const flash = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2200) }
   const share = (workout: Workout) => { if (!workout.exercises.length) return flash('先添加训练动作再分享'); setShareWorkout(workout) }
@@ -51,7 +71,7 @@ export default function App() {
   if (shared) return <SharedWorkout workout={shared} />
 
   return <div className="app-shell">
-    <header className="topbar"><div className="brand"><span className="brand-mark">练</span><div><b>练迹</b><small>FITLOG · DAILY TRAINING</small></div></div><CyberClock/><div className="streak"><Flame size={15} fill="currentColor"/> {streakOf(workouts)} 天</div></header>
+    <header className="topbar"><div className="brand"><span className="brand-mark">练</span><div><b>练迹</b><small>FITLOG · DAILY TRAINING</small></div></div><CyberClock/><div className="streak" title={syncing ? '正在同步云端数据' : '云端数据已连接'}><Flame size={15} fill="currentColor"/> {streakOf(workouts)} 天</div></header>
     <main>
       {tab === 'today' && <Today draft={draft} setDraft={setDraft} plans={plans} setPlans={setPlans} templates={workouts.flatMap(w => w.exercises)} save={save} share={() => share(draft)} />}
       {tab === 'history' && <HistoryView workouts={workouts} open={setSelected} />}
@@ -114,7 +134,7 @@ function Today({ draft, setDraft, plans, setPlans, templates, save, share }: { d
   return <section className="page today-page cyber-page">
     <div className="view-switch"><button className={mode==='overview'?'active':''} onClick={()=>setMode('overview')}><BarChart3/> 今日训练</button><button className={mode==='split'?'active':''} onClick={()=>setMode('split')}><Dumbbell/> 分化计划</button></div>
     {mode === 'overview' ? <>
-      <div className="sequence-console"><div className="section-heading"><div><span>01</span><h2>今日训练序列</h2></div><button className="text-btn" onClick={openAdd}><Plus/> 自定义</button></div><div className="protocol-grid compact">{PARTS.map(p=><button key={p} data-part={p} className={selectedParts.includes(p)?'active':''} onClick={()=>togglePart(p)}><b>{p}</b><small>{plans[p].length} 个</small><i/></button>)}</div><div className="sequence-meta"><label><Clock3/><b>{draft.duration}</b><span>分钟</span><input aria-label="训练时长" type="range" min="10" max="180" step="5" value={draft.duration} onChange={e=>setDraft({...draft,duration:+e.target.value})}/></label><div><Dumbbell/><b>{draft.exercises.length}</b><span>动作</span></div><div><span>完成</span><b>{done}/{target}</b><small>目标组</small></div></div>{!!target&&<div className="workout-progress compact-progress"><i><span style={{width:`${done/target*100}%`}}/></i></div>}{!groups.length&&<button className="empty-card cyber-empty" onClick={()=>setMode('split')}><span><Dumbbell/></span><b>先建立分化动作库</b><small>进入分化计划，为各部位配置动作</small></button>}<div className="part-groups">{groups.map(group=><section className="part-group" data-part={group.part} key={group.part}><header><span>{group.part}</span><b>{group.items.length} EXERCISES</b><i/></header><div className="exercise-list">{group.items.length?group.items.map((e,i)=>card(e,i)):<div className="empty-protocol">该部位尚未配置动作</div>}</div></section>)}</div></div>
+      <div className="sequence-console"><div className="section-heading"><div><span>01</span><h2>今日训练序列</h2></div><button className="text-btn" onClick={openAdd}><Plus/> 自定义</button></div><div className="protocol-grid compact">{PARTS.map(p=>{ const PartIcon=PART_ICONS[p]; return <button key={p} data-part={p} className={selectedParts.includes(p)?'active':''} onClick={()=>togglePart(p)}><PartIcon className="part-icon" aria-hidden="true"/><b>{p}</b><small>{plans[p].length} 个</small><i/></button>})}</div><div className="sequence-meta"><label><Clock3/><b>{draft.duration}</b><span>分钟</span><input aria-label="训练时长" type="range" min="10" max="180" step="5" value={draft.duration} onChange={e=>setDraft({...draft,duration:+e.target.value})}/></label><div><Dumbbell/><b>{draft.exercises.length}</b><span>动作</span></div><div><span>完成</span><b>{done}/{target}</b><small>目标组</small></div></div>{!!target&&<div className="workout-progress compact-progress"><i><span style={{width:`${done/target*100}%`}}/></i></div>}{!groups.length&&<button className="empty-card cyber-empty" onClick={()=>setMode('split')}><span><Dumbbell/></span><b>先建立分化动作库</b><small>进入分化计划，为各部位配置动作</small></button>}<div className="part-groups">{groups.map(group=><section className="part-group" data-part={group.part} key={group.part}><header><span>{group.part}</span><b>{group.items.length} EXERCISES</b><i/></header><div className="exercise-list">{group.items.length?group.items.map((e,i)=>card(e,i)):<div className="empty-protocol">该部位尚未配置动作</div>}</div></section>)}</div></div>
       <div className="section-heading"><div><span>02</span><h2>训练反馈</h2></div></div><div className="feeling-row">{[1,2,3,4,5].map(n=><button key={n} className={draft.feeling===n?'active':''} onClick={()=>setDraft({...draft,feeling:n})}>{['过载','疲劳','稳定','良好','峰值'][n-1]}</button>)}</div><textarea placeholder="记录今日训练数据与身体反馈…" value={draft.note} onChange={e=>setDraft({...draft,note:e.target.value})}/><div className="action-row"><button className="share-btn" onClick={share}><Share2/></button><button className="save-btn" onClick={save}>提交训练日志 <ChevronRight/></button></div>
     </> : <>
       <aside className="part-rail" aria-label="部位快捷切换">{PARTS.map(p=><button key={p} className={activePart===p?'active':''} onClick={()=>setActivePart(p)}>{p}</button>)}</aside>
